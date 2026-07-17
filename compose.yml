@@ -1,0 +1,71 @@
+services:
+  web:
+    image: ${COMPOSE_PROJECT_NAME:-rent-assist}-app
+    build:
+      context: .
+      target: dev
+      dockerfile: Dockerfile
+    volumes:
+      - ./rent_assist:/app/rent_assist
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+      - ./migration.sh:/app/migration.sh
+      - ./scripts:/app/scripts
+      - ./alembic.ini:/app/alembic.ini
+      - ./migrations:/app/migrations
+    ports:
+      - 8010:8000
+    command: bash -c "/app/migration.sh; uvicorn rent_assist.main:app --reload --port 8000 --host 0.0.0.0 --reload-dir /app/rent_assist"
+    env_file:
+      - .env
+    networks:
+      - default
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  db:
+    image: postgres:15-alpine
+    env_file:
+      - .env
+    restart: always
+    ports:
+      - '5433:${POSTGRES_PORT}'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - default
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - '6380:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - default
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: rent-assist-network
